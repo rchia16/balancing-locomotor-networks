@@ -7,4 +7,4 @@ This repository provides the python code for describing the presynaptically inhi
 The code was written using Python 3.10 and the Brian2 simulator. Please refer to the Brian2 documentation for [installation](https://brian2.readthedocs.io/en/stable/introduction/install.html). 
 
 ## Additional Files
-The recruitment curve data and mean afferent firing rates for ankle flexor/extensor locomotor activity was adopted from [Formento et al., 2018](https://github.com/FormentoEmanuele/MuscleSpindleCircuitsModel).
+The recruitment curve data and mean afferent firing rates for ankle flexor/extensor locomotor activity were adopted from [Formento et al., 2018](https://github.com/FormentoEmanuele/MuscleSpindleCircuitsModel).
