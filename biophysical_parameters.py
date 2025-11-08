@@ -117,7 +117,7 @@ axon_params = {
     "N": 60,
     "tau": 30*ms,
     "tau_ref": 1.6*ms, # refractory period
-    "Cm" : 0.1*uF/cm**2, # myelinated capacitance
+    "Cm" : 1.0*uF/cm**2, # myelinated capacitance
     # "Cm" : 0.1*uF/cm**2, # myelinated capacitance
     "Ci" : 2*uF/cm**2, # unmyelinated capacitance
     "Ri" : 70*ohm*cm, # 
@@ -218,3 +218,4 @@ gm_offset_dict = {0.8: -0.319,
 ta_offset_dict = {0.8: -0.171,
                   0.6: -0.122,
                   0.4: -0.221}
+
