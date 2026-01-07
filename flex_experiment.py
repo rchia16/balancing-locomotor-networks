@@ -24,8 +24,6 @@ warnings.simplefilter('ignore')
 '''
 
 parser = ArgumentParser()
-parser.add_argument('--run_id', type=int, default=0,
-                    help='Unique number for run identification')
 parser.add_argument('--stim_w', type=float, default=0,
                     help='Stim in mV for poisson input to axons')
 parser.add_argument('--stim_freq', type=float, default=0,
@@ -44,6 +42,7 @@ parser.add_argument('--is_sci', type=int, default=0,
 parser.add_argument('--is_spastic', type=int, default=0,
                     choices=[0, 1],
                     help='Activate Spasticity GABA settings')
+parser.add_argument('--seed', type=int, default=42)
 parser.add_argument('--debug', action='store_true',
                     help='save or not save run or make directories')
 
@@ -51,10 +50,11 @@ args = parser.parse_args()
 
 t0 = time.time()
 
-run_id = str(args.run_id).zfill(3)
 is_sci = args.is_sci
 is_spastic = args.is_spastic
 debug = args.debug
+
+assert args.seed >= 0, 'Invalid input: seed must be greater than 0'
 
 # GM Ia Settings
 is_bws = args.is_bws
@@ -71,19 +71,17 @@ plt.close('all')
 plt.rcParams.update({'axes.titlesize': 14,
                      'axes.labelsize': 12})
 
-results_dir = '/data/rqchia/snn_results/experiment_log'
+_user = 'raqchia'
+results_dir = f'/data/{_user}/snn_results/experiment_log'
 makedirs(results_dir, exist_ok=True)
 
-output_dir = '/scratch/rqchia/brian2/output'
+output_dir = f'/scratch/{_user}/brian2/output'
 makedirs(output_dir, exist_ok=True)
 set_device('cpp_standalone', directory=output_dir)
 
-# output_dir = '/scratch/rqchia/brian2cuda/output'
-# makedirs(output_dir, exist_ok=True)
-# set_device('cuda_standalone', directory=output_dir)
-defaultclock.dt = 0.005*ms
-devices.device.seed(42)
-np.random.seed(42)
+defaultclock.dt = 0.05*ms
+devices.device.seed(args.seed)
+np.random.seed(args.seed)
 
 def create_stim_profiles(perc, N, stim_period=1, pulse_width=0.5*ms,
                          shuffle=True):
@@ -121,9 +119,10 @@ def create_stim_profiles(perc, N, stim_period=1, pulse_width=0.5*ms,
 =======================
 """
 rat_gait = read_gait_profile('input-files/ratGaitCycles.p')
-duration = 1.17*second # gait cycle duration
 gauss_width = 25*ms
-bg_noise = 0.001
+bg_noise = 0.3
+
+# gait cycle duration
 if debug:
     duration = rat_gait[1]*second
 else:
@@ -168,6 +167,8 @@ else:
     stim_period = 1/stim_freq
 pulse_width = 0.2*ms
 
+# True: Poisson estimated afferent stim
+# False: Supra-threshold afferent recruitment (Capogrosso 2013)
 use_poisson = True
 
 ia_stim = TimedArray(np.zeros((1, axon_params['N']))*pA, dt=pulse_width)
@@ -188,7 +189,9 @@ exo_stim = np.tile(
     len(amplitudes)
 )
 
-# Supra-threshold primary and secondary afferent recruitment stimulation
+# Supra-threshold primary and secondary afferent recruitment stimulation. I
+# forgot what happens if I do this. Oh I don't want to do this because it's
+# suprathreshold
 if not use_poisson:
     stim_scale = np.ceil(duration/pulse_width).astype(int)
 
@@ -233,6 +236,7 @@ poisson_stim = PoissonGroup(int(axon_params['N']//poisson_stim_scale),
 ---------
 '''
 cfg_dict = {
+    'seed'        : args.seed,
     'duration'    : duration/second,
     'is_sci'      : is_sci,
     'is_bws'      : is_bws,
@@ -250,6 +254,9 @@ cfg_dict = {
     'p_iaIN'      : p_iaIN,
     'p_in_mn'     : p_in_mn,
 }
+exp_mngr = ExperimentManager(cfg_dict, results_dir)
+run_id = exp_mngr.get_run_id()
+run_id = str(run_id).zfill(3)
 
 """
 ===============
@@ -268,26 +275,36 @@ ax_N       = axon_params['N']
 ax_Vth     = axon_params['Vth']
 ax_Vr      = axon_params['V_reset']
 ax_tau_ref = axon_params['tau_ref']
-ax_ia_area = np.pi*(ia_diameter_mu/2)**2
-ax_ii_area = np.pi*(ii_diameter_mu/2)**2
+# ax_ia_area = np.pi*(ia_diameter_mu/2)**2
+# ax_ii_area = np.pi*(ii_diameter_mu/2)**2
+
+ax_ia_area = np.pi*(ia_diameter_mu)
+ax_ia_area = [np.pi*(ia_diameter_sd)*np.random.randn(ax_N) + ax_ia_area for i
+              in range(2)]
+
+ax_ii_area = np.pi*(ii_diameter_mu)
+ax_ii_area = [np.pi*(ii_diameter_sd)*np.random.randn(ax_N) + ax_ii_area for i
+              in range(2)]
 
 ax_v_mu = (ax_Vr + ax_Vth)/2
 ax_v_sd = 10*mV
 axon_init_v = ax_v_sd*np.random.randn(ax_N) + ax_v_mu
 
 ax_ia_eqn = '''
-dv/dt = (El - v)/tau + (I_in + i_stim + i_noise)/(Cm*ax_ia_area) \
+dv/dt = (El - v)/tau + (I_in + i_stim + i_noise)/(Cm*ax_area*cable_len) \
         : volt (unless refractory)
 i_noise : amp
 i_stim = ia_stim(t, i) : amp
+ax_area : metre
 I_in : amp
 '''
 
 ax_ii_eqn = '''
-dv/dt = (El - v)/tau + (I_in + i_stim + i_noise)/(Cm*ax_ii_area) \
+dv/dt = (El - v)/tau + (I_in + i_stim + i_noise)/(Cm*ax_area*cable_len) \
         : volt (unless refractory)
 i_noise : amp
 i_stim = ii_stim(t, i) : amp
+ax_area : metre
 I_in : amp
 '''
 
@@ -296,6 +313,7 @@ ta_ia_axon = NeuronGroup(ax_N, ax_ia_eqn, threshold='v>=ax_Vth',
                          refractory=ax_tau_ref,
                          namespace=axon_params)
 ta_ia_axon.v = axon_init_v
+ta_ia_axon.ax_area = ax_ia_area[0]
 ta_ia_axon.run_regularly(f"i_noise = bg_noise*randn()*pA", dt=1/fs)
 
 gm_ia_axon = NeuronGroup(ax_N, ax_ia_eqn, threshold='v>=ax_Vth',
@@ -303,12 +321,14 @@ gm_ia_axon = NeuronGroup(ax_N, ax_ia_eqn, threshold='v>=ax_Vth',
                          refractory=ax_tau_ref,
                          namespace=axon_params)
 gm_ia_axon.v = axon_init_v
+gm_ia_axon.ax_area = ax_ia_area[1]
 gm_ia_axon.run_regularly(f"i_noise = bg_noise*randn()*pA", dt=1/fs)
 
 ta_ii_axon = NeuronGroup(ax_N, ax_ii_eqn, threshold='v>=ax_Vth',
                          reset='v=ax_Vr', method='euler',
                          refractory=ax_tau_ref, namespace=axon_params)
 ta_ii_axon.v = axon_init_v
+ta_ii_axon.ax_area = ax_ii_area[0]
 ta_ii_axon.run_regularly(f"i_noise = bg_noise*randn()*pA", dt=1/fs)
 
 gm_ii_axon = NeuronGroup(ax_N, ax_ii_eqn, threshold='v>=ax_Vth',
@@ -316,6 +336,7 @@ gm_ii_axon = NeuronGroup(ax_N, ax_ii_eqn, threshold='v>=ax_Vth',
                          refractory=ax_tau_ref,
                          namespace=axon_params)
 gm_ii_axon.v = axon_init_v
+gm_ii_axon.ax_area = ax_ii_area[1]
 gm_ii_axon.run_regularly(f"i_noise = bg_noise*randn()*pA", dt=1/fs)
 
 """
@@ -672,18 +693,22 @@ idx = 0
 M_ta_ia_ax = StateMonitor(ta_ia_axon, ax_monitor_vars, record=[idx])
 P_ta_ia_in = PopulationRateMonitor(ta_ia_input)
 P_ta_ia_ax = PopulationRateMonitor(ta_ia_axon)
+S_ta_ia_ax  = SpikeMonitor(ta_ia_axon, record=True)
 
 M_gm_ia_ax = StateMonitor(gm_ia_axon, ax_monitor_vars, record=[idx])
 P_gm_ia_in = PopulationRateMonitor(gm_ia_input)
 P_gm_ia_ax = PopulationRateMonitor(gm_ia_axon)
+S_gm_ia_ax  = SpikeMonitor(gm_ia_axon, record=True)
 
 M_ta_ii_ax = StateMonitor(ta_ii_axon, ax_monitor_vars, record=[idx])
 P_ta_ii_in = PopulationRateMonitor(ta_ii_input)
 P_ta_ii_ax = PopulationRateMonitor(ta_ii_axon)
+S_ta_ii_ax  = SpikeMonitor(ta_ii_axon, record=True)
 
 M_gm_ii_ax = StateMonitor(gm_ii_axon, ax_monitor_vars, record=[idx])
 P_gm_ii_in = PopulationRateMonitor(gm_ii_input)
 P_gm_ii_ax = PopulationRateMonitor(gm_ii_axon)
+S_gm_ii_ax  = SpikeMonitor(gm_ii_axon, record=True)
 
 M_ta_v2a  = StateMonitor(v2a, in_monitor_vars, record=[idx])
 S_ta_v2a  = SpikeMonitor(v2a, record=True)
@@ -725,17 +750,23 @@ m_mn_fname  = join(run_dir, 'state_mn.pkl')
 s_mn_fname  = join(run_dir, 'spike_mn.pkl')
 p_mn_fname  = join(run_dir, 'prate_mn.pkl')
 
+axon_input_stats_fname = join(run_dir, 'axon_input_stats.json')
+
 m_ta_ia_axon_fname = join(run_dir, 'state_ta_ia_axon.pkl')
 p_ta_ia_axon_fname = join(run_dir, 'prate_ta_ia_axon.pkl')
+s_ta_ia_axon_fname = join(run_dir, 'spike_ta_ia_axon.pkl')
 
 m_gm_ia_axon_fname = join(run_dir, 'state_gm_ia_axon.pkl')
 p_gm_ia_axon_fname = join(run_dir, 'prate_gm_ia_axon.pkl')
+s_gm_ia_axon_fname = join(run_dir, 'spike_gm_ia_axon.pkl')
 
 m_ta_ii_axon_fname = join(run_dir, 'state_ta_ii_axon.pkl')
 p_ta_ii_axon_fname = join(run_dir, 'prate_ta_ii_axon.pkl')
+s_ta_ii_axon_fname = join(run_dir, 'spike_ta_ii_axon.pkl')
 
 m_gm_ii_axon_fname = join(run_dir, 'state_gm_ii_axon.pkl')
 p_gm_ii_axon_fname = join(run_dir, 'prate_gm_ii_axon.pkl')
+s_gm_ii_axon_fname = join(run_dir, 'spike_gm_ii_axon.pkl')
 
 m_taIaIN_fname = join(run_dir, 'state_taIaIN.pkl')
 s_taIaIN_fname = join(run_dir, 'spike_taIaIN.pkl')
@@ -782,53 +813,96 @@ figsize = (14, 12)
 def plot_afferent_to_axon():
     fig, axs = plt.subplots(4, 3, figsize=figsize)
 
-    axs[0,0].plot(P_ta_ia_in.t/ms, P_ta_ia_in.smooth_rate(window='gaussian', 
-                                                          width=gauss_width))
+    ta_ia_input = P_ta_ia_in.smooth_rate(window='gaussian', width=gauss_width)
+    axs[0,0].plot(P_ta_ia_in.t/ms, ta_ia_input)
     axs[0,0].set_title("ta ia poisson input (Hz)")
 
     axs[0,1].plot(M_ta_ia_ax.t/ms, M_ta_ia_ax.v[idx]/mV)
     axs[0,1].plot(M_ta_ia_ax.t/ms, M_ta_ia_ax.i_stim[idx]/uA)
     axs[0,1].set_title("ta ia axon0 (mV)")
 
-    axs[0,2].plot(P_ta_ia_ax.t/ms, P_ta_ia_ax.smooth_rate(window='gaussian', 
-                                                          width=gauss_width))
+    ta_ia_axon = P_ta_ia_ax.smooth_rate(window='gaussian', width=gauss_width)
+    axs[0,2].plot(P_ta_ia_ax.t/ms, ta_ia_axon)
     axs[0,2].set_title("ta ia axon (Hz)")
 
-    axs[1,0].plot(P_gm_ia_in.t/ms, P_gm_ia_in.smooth_rate(window='gaussian', 
-                                                          width=gauss_width))
+    gm_ia_input = P_gm_ia_in.smooth_rate(window='gaussian', width=gauss_width)
+    axs[1,0].plot(P_gm_ia_in.t/ms, gm_ia_input)
     axs[1,0].set_title("gm poisson input (Hz)")
 
     axs[1,1].plot(M_gm_ia_ax.t/ms, M_gm_ia_ax.v[idx]/mV)
     axs[1,1].set_title("gm ia axon0 (mV)")
 
-    axs[1,2].plot(P_gm_ia_ax.t/ms, P_gm_ia_ax.smooth_rate(window='gaussian', 
-                                                          width=gauss_width))
+    gm_ia_axon = P_gm_ia_ax.smooth_rate(window='gaussian', width=gauss_width)
+    axs[1,2].plot(P_gm_ia_ax.t/ms, gm_ia_axon)
     axs[1,2].set_title("gm ia axon (Hz)")
 
-    axs[2,0].plot(P_gm_ii_in.t/ms, P_gm_ii_in.smooth_rate(window='gaussian', 
-                                                          width=gauss_width))
+    gm_ii_input = P_gm_ii_in.smooth_rate(window='gaussian', width=gauss_width)
+    axs[2,0].plot(P_gm_ii_in.t/ms, gm_ii_input)
     axs[2,0].set_title("gm poisson input (Hz)")
         
     axs[2,1].plot(M_gm_ii_ax.t/ms, M_gm_ii_ax.v[idx]/mV)
     axs[2,1].plot(M_gm_ii_ax.t/ms, M_gm_ii_ax.i_stim[idx]/uA)
     axs[2,1].set_title("gm ii axon0 (mV)")
 
-    axs[2,2].plot(P_gm_ii_ax.t/ms, P_gm_ii_ax.smooth_rate(window='gaussian', 
-                                                         width=gauss_width))
+    gm_ii_axon = P_gm_ii_ax.smooth_rate(window='gaussian', width=gauss_width)
+    axs[2,2].plot(P_gm_ii_ax.t/ms, gm_ii_axon)
     axs[2,2].set_title("gm ii axon (Hz)")
 
-    axs[3,0].plot(P_ta_ii_in.t/ms, P_ta_ii_in.smooth_rate(window='gaussian', 
-                                                          width=gauss_width))
+    ta_ii_input = P_ta_ii_in.smooth_rate(window='gaussian', width=gauss_width)
+    axs[3,0].plot(P_ta_ii_in.t/ms, ta_ii_input)
     axs[3,0].set_title("ta ii poisson input (Hz)")
 
     axs[3,1].plot(M_ta_ii_ax.t/ms, M_ta_ii_ax.v[idx]/mV)
     axs[3,1].set_title("ta ii axon (mV)")
 
-    axs[3,2].plot(P_ta_ii_ax.t/ms, P_ta_ii_ax.smooth_rate(window='gaussian', 
-                                                          width=gauss_width))
+    ta_ii_axon = P_ta_ii_ax.smooth_rate(window='gaussian', width=gauss_width)
+    axs[3,2].plot(P_ta_ii_ax.t/ms, ta_ii_axon)
     axs[3,2].set_title("ta ii axon (Hz)")
 
+    from scipy import stats
+    from sklearn.metrics import mean_absolute_error
+
+    ta_ia_cc  = stats.pearsonr(ta_ia_input, ta_ia_axon)
+    ta_ia_mae = mean_absolute_error(ta_ia_input, ta_ia_axon)
+
+    ta_ii_cc  = stats.pearsonr(ta_ii_input, ta_ii_axon)
+    ta_ii_mae = mean_absolute_error(ta_ii_input, ta_ii_axon)
+
+    gm_ia_cc  = stats.pearsonr(gm_ia_input, gm_ia_axon)
+    gm_ia_mae = mean_absolute_error(gm_ia_input, gm_ia_axon)
+
+    gm_ii_cc  = stats.pearsonr(gm_ii_input, gm_ii_axon)
+    gm_ii_mae = mean_absolute_error(gm_ii_input, gm_ii_axon)
+
+    axon_input_stats = {
+        'ta_ia': {'cc' : ta_ia_cc,
+                  'mae': ta_ia_mae,},
+        'ta_ii': {'cc' : ta_ii_cc,
+                  'mae': ta_ii_mae,},
+        'gm_ia': {'cc' : gm_ia_cc,
+                  'mae': gm_ia_mae,},
+        'gm_ii': {'cc' : gm_ii_cc,
+                  'mae': gm_ii_mae,},
+    }
+
+    print("TA Ia")
+    print(ta_ia_cc)     
+    print(ta_ia_mae)
+                                                       
+    print("TA II")
+    print(ta_ii_cc)     
+    print(ta_ii_mae)
+                                                       
+    print("GM Ia")
+    print(gm_ia_cc)     
+    print(gm_ia_mae)
+                                                       
+    print("GM II")
+    print(gm_ii_cc)     
+    print(gm_ii_mae)
+
     if not debug:
+        save_json(axon_input_stats, axon_input_stats_fname)
         fig.savefig(join(run_dir, f"{run_id}_axon.png"))
 
 def plot_axon_to_in():
@@ -913,9 +987,6 @@ def plot_inputs_to_mn():
                 (fire_rates, np.ravel(mn_freq[start:end])), axis=0
             )
 
-        # print("{0} +- {1}".format(mn_freq[start:end].mean(),
-        #                           mn_freq[start:end].std())
-        #      )
     
     print("mean fire_rates: {}\t{}".format(
         np.mean(fire_rates), np.std(fire_rates)))
@@ -987,19 +1058,19 @@ if not debug:
                        P_mn, p_mn_fname)
 
     write_monitor_data(M_ta_ia_ax, m_ta_ia_axon_fname, ax_monitor_vars,
-                       None, None,
+                       S_ta_ia_ax, s_ta_ia_axon_fname,
                        P_ta_ia_ax, p_ta_ia_axon_fname)
 
     write_monitor_data(M_ta_ii_ax, m_ta_ii_axon_fname, ax_monitor_vars,
-                       None, None,
+                       S_ta_ii_ax, s_ta_ii_axon_fname,
                        P_ta_ii_ax, p_ta_ii_axon_fname)
 
     write_monitor_data(M_gm_ia_ax, m_gm_ia_axon_fname, ax_monitor_vars,
-                       None, None,
+                       S_gm_ia_ax, s_gm_ia_axon_fname,
                        P_gm_ia_ax, p_gm_ia_axon_fname)
 
     write_monitor_data(M_gm_ii_ax, m_gm_ii_axon_fname, ax_monitor_vars,
-                       None, None,
+                       S_gm_ii_ax, s_gm_ii_axon_fname,
                        P_gm_ii_ax, p_gm_ii_axon_fname)
 
     write_monitor_data(M_ta_iaIN, m_taIaIN_fname, iaIN_monitor_vars,
@@ -1019,3 +1090,6 @@ if not debug:
                        P_gm_gaba, p_gaba_fname)
 
 print("wall time: ", time.time()-t0)
+
+print("Finished run ", run_id)
+print()

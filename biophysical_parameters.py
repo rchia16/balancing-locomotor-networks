@@ -37,7 +37,8 @@ lr_ms = 7*ms
 ''' Axon properties '''
 cv = 14.5*mm/ms # harper & lawson 1985
 max_firing_rate = 200
-cable_len = cv*2.5*ms
+cable_len = 1*mm
+bg_noise = 0.3
 
 ia_n_fibres = 60
 ii_n_fibres = 116
@@ -72,12 +73,12 @@ v2a INs tonic spiking
 '''
 N_v2a = 196
 v2a_params = {
-    "N": 196,
-    "c_m": 45*pF,
+    "N": 196, # capogrosso 2013
+    "c_m": 45*pF, # 
     "g_l": 1.2 * nS, # Changed to match tau Table1 (Dougherty & Kiehn 2010)
     "g_l_quip_lo": .9 * nS, # Husch et al 2015 (reduce ~15%)
-    "g_l_quip_hi": .7 * nS,
-    "e_l": -53*mV,
+    "g_l_quip_hi": .7 * nS, # adapted from husch
+    "e_l": -53*mV, # 
     "v_t": -42*mV, # -40, -35
     "d_t": 0.5 * mV, # controls exponential decay
     "a": 2.0 * nS, # conductance of adaptation
@@ -117,15 +118,14 @@ axon_params = {
     "N": 60,
     "tau": 30*ms,
     "tau_ref": 1.6*ms, # refractory period
-    "Cm" : 1.0*uF/cm**2, # myelinated capacitance
-    # "Cm" : 0.1*uF/cm**2, # myelinated capacitance
-    "Ci" : 2*uF/cm**2, # unmyelinated capacitance
+    "Cm" : 1*uF/cm**2, # myelinated capacitance, should be 1.0uF, 0.1
+    "Ci" : 0.1*uF/cm**2, # unmyelinated capacitance
     "Ri" : 70*ohm*cm, # 
     'gl' : 7e-3*siemens/cm**2,
     'El' : -80*mV,
     'Vth': -60*mV,
     'V_reset': -70*mV,
-    'w' : 7*mV,
+    'w' : 7*mV, # 7
 }
 
 '''
@@ -169,7 +169,7 @@ R_mn = 7.1e9*((tau_mn/ms)*1e-3)**1.64*ohm
 mn_params = {
     "N": 169,
     "Vr" : -65*mV,
-    "El" : -75*mV,
+    "El" : -75*mV, # capogrosso
     "Vth": -50*mV,
     "Vbuff": -58*mV,
     "deltaV" : 0.05*mV,
@@ -182,7 +182,8 @@ mn_params = {
     "gL_quip_lo" : 22*nS, # Booth et al 1997 (~15%)
     "gL_quip_hi" : 16*nS, #  (~40%)
     "Cm" : 27*nS*6*ms,
-    # --> 0.2 - 0.8uS (Gustafsson Pinter 1984, Delestree N et al., 2014)
+    # cumulative --> 0.2 - 0.8uS
+    # (Gustafsson Pinter 1984, Delestree N et al., 2014)
     'g_e' : 0.03*uS,
     'g_i' : 0.01*uS, # (Branchereau P, et al., 2019 [eLife])
 }
@@ -218,4 +219,3 @@ gm_offset_dict = {0.8: -0.319,
 ta_offset_dict = {0.8: -0.171,
                   0.6: -0.122,
                   0.4: -0.221}
-
