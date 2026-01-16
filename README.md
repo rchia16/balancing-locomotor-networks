@@ -1,5 +1,5 @@
 # balancing-locomotor-networks
-Publication: ["Biologically-Constrained Spiking Neural Network for Neuromodulation in Locomotor Recovery after Spinal Cord Injury"](https://www.biorxiv.org/content/10.1101/2024.09.04.611123) by R. Chia and C. Lin
+Publication: ["Biologically-Constrained Spiking Neural Network for Neuromodulation in Locomotor Recovery after Spinal Cord Injury"](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1013866) by R. Chia and C. Lin
 
 This repository provides the python code for describing the presynaptically inhibited ankle flexor spiking neural network (SNN) model. Biophysical parameters were constrained to experiment with reported values. The 'flex_experiment.py' script can be run to reproduce publication figures over different conditions. A high-performance computer cluster is recommended to run the simulations.
 
